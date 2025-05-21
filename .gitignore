@@ -1,3 +1,6 @@
 # Clutter files/folders
 .venv
 .vscode
+
+# We don't share this data
+/data
