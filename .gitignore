@@ -1,6 +1,7 @@
 # Clutter files/folders
 .venv
 .vscode
+__pycache__
 
 # We don't share this data
 /data
