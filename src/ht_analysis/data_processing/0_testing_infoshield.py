@@ -20,9 +20,7 @@ RESULT_PATH = BRONZE_PATH / "ids_and_text_columns_LSH_labels.csv"
 
 def process_data(data_path: Path, **kwargs: Any) -> Optional[bool]:
     """Import data from the given path directly into InfoShield"""
-    if not data_path.is_file():
-        logging.error(f"Data file not found at: {data_path}")
-        return None
+    assert data_path.is_file()
 
     try:
         id_column = kwargs.get("id_column", "ad_id")
