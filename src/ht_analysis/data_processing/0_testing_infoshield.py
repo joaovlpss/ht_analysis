@@ -4,7 +4,7 @@ from typing import Optional, Any
 
 import polars as pl
 
-from src.InfoShield import infoshieldcoarse, infoshieldfine
+from ...InfoShield import infoshieldcoarse, infoshieldfine
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -70,8 +70,8 @@ def filter_data(data_path: Path, write_path: Path, **kwargs: Any) -> Optional[bo
 
 
 def main():
-    # filter_data(data_path=RAW_PATH / "ht_data.csv", write_path=BRONZE_PATH)
-    # process_data(data_path=TABLE_PATH, id_column="ad_id", text_column="body")
+    filter_data(data_path=RAW_PATH / "ht_data.csv", write_path=BRONZE_PATH)
+    process_data(data_path=TABLE_PATH, id_column="ad_id", text_column="body")
 
     logging.info(f"Describing dataframe from {str(RESULT_PATH).split('/')[-1]}")
     try:

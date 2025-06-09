@@ -5,3 +5,4 @@ __pycache__
 
 # We don't share this data
 /data
+/artifacts
