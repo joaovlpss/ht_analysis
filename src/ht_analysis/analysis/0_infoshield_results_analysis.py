@@ -21,15 +21,15 @@ OUTPUT_PATH = PROJECT_ROOT / "artifacts" / "graphs" / "infoshield_results"
 
 # Statically define the color map for node types
 STATIC_COLOR_MAP = {
-    "ad_id": "#FF6347",  # Tomato
-    "person_id": "#4682B4",  # SteelBlue
-    "phone": "#32CD32",  # LimeGreen
-    "email": "#FFD700",  # Gold
-    "url": "#6A5ACD",  # SlateBlue
-    "main_image_url": "#8A2BE2",  # BlueViolet
-    "LSH label": "#D2691E",  # Chocolate
-    "trajectory": "#00CED1",  # DarkTurquoise
-    "person": "#4682B4", # person_id is aliased to person, so we should use the same color
+    "ad_id": "#FF0000",              # Red
+    "person_id": "#0000FF",           # Blue
+    "phone": "#00C000",              # Bright Green
+    "email": "#FFA500",              # Bright Orange
+    "url": "#000000",              # Black
+    "main_image_url": "#00CED1",      # Dark Turquoise / Cyan
+    "LSH label": "#FF00FF",           # Magenta / Fuchsia
+    "trajectory": "#A52A2A",         # Brown
+    "person": "#0000FF",              # Blue (aliased with person_id)
 }
 
 
@@ -65,20 +65,76 @@ def add_lsh_labels(dataset: pl.DataFrame, lsh_labels: pl.DataFrame) -> pl.DataFr
     return dataset.join(lsh_labels, on="ad_id", how="left")
 
 
+def plot_and_save_graph(graph: nx.Graph, file_path: Path, title: str):
+    """Generates and saves an interactive plot of a graph."""
+    if graph.number_of_nodes() == 0:
+        logging.warning(f"Skipping plot for empty graph: {title}")
+        return
+
+    # Create output directory if it doesn't exist
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    pos = nx.spring_layout(graph, seed=42)
+
+    # Edge trace
+    edge_x, edge_y = [], []
+    for edge in graph.edges():
+        x0, y0 = pos[edge[0]]
+        x1, y1 = pos[edge[1]]
+        edge_x.extend([x0, x1, None])
+        edge_y.extend([y0, y1, None])
+
+    edge_trace = go.Scatter(
+        x=edge_x, y=edge_y,
+        line=dict(width=0.5, color='#888'),
+        hoverinfo='none',
+        mode='lines')
+
+    # Node trace
+    node_x, node_y, node_text, node_color = [], [], [], []
+    for node in graph.nodes():
+        x, y = pos[node]
+        node_x.append(x)
+        node_y.append(y)
+        node_type = graph.nodes[node].get('type', 'unknown')
+        node_text.append(f"{node}<br>Type: {node_type}")
+        node_color.append(STATIC_COLOR_MAP.get(node_type, "#808080")) # Default to grey
+
+    node_trace = go.Scatter(
+        x=node_x, y=node_y,
+        mode='markers',
+        hoverinfo='text',
+        text=node_text,
+        marker=dict(
+            showscale=False,
+            color=node_color,
+            size=10,
+            line_width=2))
+
+    # Create figure
+    fig = go.Figure(data=[edge_trace, node_trace],
+                 layout=go.Layout(
+                    title=title,
+                    showlegend=False,
+                    hovermode='closest',
+                    margin=dict(b=20,l=5,r=5,t=40),
+                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
+                    )
+
+    logging.info(f"Saving graph to {file_path}")
+    fig.write_html(file_path)
+
+
 def main():
     logging.info("Trying to load dataset and LSH Labels...")
-    dataset = load_data(DATASET_PATH).drop("LSH label")
-    lsh_labels = load_data(LSH_LABEL_PATH)
+    dataset = load_data(DATASET_PATH, infer_schema_length=10000).drop("LSH label")
 
     logging.info("Successfully loaded dataset and LSH labels! Performing join...")
-    dataset_lsh = add_lsh_labels(dataset=dataset, lsh_labels=lsh_labels)
 
-    print(f"Shape antes = {dataset_lsh.shape}")
-
-    logging.info("Mounting graph from new dataset...")
-    logging.info("Separating columns of interest.")
-    dataset_lsh = (
-        dataset_lsh.with_columns(
+    logging.info("Preparing data for graph construction...")
+    graph_df = (
+        dataset.with_columns(
             pl.concat_str(["location_detail", "post_date"], separator="_").alias(
                 "trajectory"
             )
@@ -90,129 +146,92 @@ def main():
             pl.col("email"),
             pl.col("url"),
             pl.col("main_image_url"),
-            pl.col("LSH label"),
             pl.col("trajectory"),
         )
-        .drop_nulls("LSH label")
     )
 
-    print(f"Shape depois = {dataset_lsh.shape}")
-
-    logging.info(
-        "Separating rows with LSH labels in the top 10% percentile (of appearances)."
-    )
-    # here, we count the number of appearances of unique labels,
-    # separate the top 10% percentile of labels by appearance,
-    # then filter our dataset with only rows which contain such labels in the "LSH label" column.
-    counts_df = dataset_lsh["LSH label"].value_counts(sort=True)
-    print(counts_df.head(10))
-
-    top_10pct_count = int(0.1 * counts_df.height)
-    top_labels = counts_df.head(top_10pct_count)["LSH label"]
-    top_10pct_df = dataset_lsh.filter(pl.col("LSH label").is_in(top_labels))
-
-    OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
-    logging.info(f"Output directory created at: {OUTPUT_PATH}")
-
-    unique_lsh_labels = top_10pct_df["LSH label"].unique().to_list()
-    logging.info(
-        f"Found {len(unique_lsh_labels)} unique 'LSH label' categories to process."
-    )
-
-    for lsh_label in unique_lsh_labels:
-        logging.info(f"Processing graph for LSH label: {lsh_label}")
-
-        label_df = top_10pct_df.filter(pl.col("LSH label") == lsh_label)
-
-        graph = nx.Graph()
-        for row in label_df.iter_rows(named=True):
-            person_id = row["person_id"]
-            if person_id is None:
-                continue
-
-            graph.add_node(person_id, type="person")
-
-            for col_name, value in row.items():
-                if col_name != "person_id" and value is not None:
-                    # Prefix with column name to ensure uniqueness
-                    node_id = f"{col_name}_{value}"
-                    graph.add_node(node_id, type=col_name)
-                    graph.add_edge(person_id, node_id)
-
-        logging.info(
-            f"Graph for '{lsh_label}' created with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges."
-        )
-
-        if graph.number_of_nodes() == 0:
-            logging.warning(f"Graph for LSH label '{lsh_label}' is empty. Skipping visualization.")
+    logging.info("Mounting graph from the dataset...")
+    graph = nx.Graph()
+    for row in graph_df.iter_rows(named=True):
+        person_id = row.get("person_id")
+        if person_id is None:
             continue
 
-        logging.info("Generating interactive graph plot with Plotly...")
+        # Add person node, aliasing its type to 'person' for consistency
+        graph.add_node(person_id, type="person")
 
-        pos = nx.spring_layout(graph, seed=42)
+        for col_name, value in row.items():
+            if col_name != "person_id" and value is not None:
+                # Prefix with column name to ensure uniqueness of nodes across types
+                node_id = f"{col_name}_{value}"
+                graph.add_node(node_id, type=col_name)
+                graph.add_edge(person_id, node_id)
 
-        edge_x, edge_y = [], []
-        for edge in graph.edges():
-            x0, y0 = pos[edge[0]]
-            x1, y1 = pos[edge[1]]
-            edge_x.extend([x0, x1, None])
-            edge_y.extend([y0, y1, None])
+    logging.info(f"Graph mounted successfully with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges.")
 
+    logging.info("Calculating the main core of the graph...")
+    main_core = nx.k_core(graph)
+    logging.info(f"Main core contains {main_core.number_of_nodes()} nodes.")
 
-        edge_trace = go.Scatter(
-            x=edge_x,
-            y=edge_y,
-            line=dict(width=0.5, color="#888"),
-            hoverinfo="none",
-            mode="lines",
+    logging.info("Identifying top 10 most connected 'person' nodes in the core...")
+    core_degrees = dict(main_core.degree())
+
+    person_nodes = [
+        n for n, attr in main_core.nodes(data=True) if attr.get("type") == "person"
+    ]
+
+    top_persons = sorted(
+        person_nodes,
+        key=lambda n: core_degrees.get(n, 0),
+        reverse=True
+    )[:10]
+
+    logging.info(f"Top 10 persons identified: {top_persons}")
+
+    logging.info("Generating and saving egonet plots for top persons...")
+    for person_node in top_persons:
+        person_output_path = OUTPUT_PATH / str(person_node)
+
+        for radius in [1, 2]:
+            logging.info(f"Generating egonet for '{person_node}' with radius {radius}...")
+            ego_graph = nx.ego_graph(graph, person_node, radius=radius)
+
+            file_name = f"egonet_radius_{radius}.html"
+            output_file_path = person_output_path / file_name
+
+            plot_title = f"EgoNet for {person_node} (Radius: {radius})"
+            plot_and_save_graph(ego_graph, output_file_path, title=plot_title)
+
+    logging.info("Creating and saving dataset for top 10 persons...")
+
+    # Add the 'trajectory' column to the original dataset. This is done here to
+    # avoid altering the existing workflow above.
+    dataset_with_trajectory = dataset.with_columns(
+        pl.concat_str(["location_detail", "post_date"], separator="_").alias(
+            "trajectory"
         )
+    )
 
-        # create node traces
-        node_x, node_y, node_text, node_colors = [], [], [], []
-        for node in graph.nodes():
-            x, y = pos[node]
-            node_type = graph.nodes[node].get("type", "unknown")
-            node_x.append(x)
-            node_y.append(y)
-            node_text.append(f"ID: {node}<br>Type: {node_type}")
-            node_colors.append(STATIC_COLOR_MAP.get(node_type, "#808080")) # default to grey
+    # Filter the dataset for rows where 'data_chat_name' is in the top_persons list
+    # and select the specified columns.
+    top_10_table = dataset_with_trajectory.filter(
+        pl.col("data_chat_name").is_in(top_persons)
+    ).select(
+        "data_chat_name",
+        "ad_id",
+        "phone",
+        "email",
+        "url",
+        "trajectory",
+        "body",
+    ).sort(by="data_chat_name")
 
-        node_trace = go.Scatter(
-            x=node_x,
-            y=node_y,
-            mode="markers",
-            hoverinfo="text",
-            marker=dict(
-                showscale=False,
-                size=10,
-                color=node_colors,
-                line_width=2,
-            ),
-        )
-        node_trace.text = node_text
+    output_csv_path = OUTPUT_PATH / "top_10_persons_data.csv"
+    logging.info(f"Saving top 10 persons data to {output_csv_path}")
+    top_10_table.write_csv(output_csv_path)
 
-        fig = go.Figure(
-            data=[edge_trace, node_trace],
-            layout=go.Layout(
-                title=dict(
-                    text=f"Network Graph for LSH Label: {lsh_label}",
-                    font=dict(size=16)
-                ),
-                showlegend=False,
-                hovermode="closest",
-                margin=dict(b=20, l=5, r=5, t=40),
-                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            ),
-        )
+    logging.info("Script finished successfully.")
 
-        output_filename = OUTPUT_PATH / f"graph_for_LSH_label_{lsh_label}.html"
-        try:
-            fig.write_html(str(output_filename))
-            logging.info(f"Interactive graph saved to: {output_filename}")
-        except Exception as e:
-            logging.error(f"Error generating or saving Plotly graph: {e}")
-            raise e
 
 if __name__ == "__main__":
     main()
