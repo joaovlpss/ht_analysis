@@ -45,38 +45,57 @@ def load_data(data_path: Path, **kwargs: Any) -> pl.DataFrame:
         logging.error(f"An unexpected error occurred while loading {data_path}: {e}")
         raise
 
-def plot_location_over_time(df: pl.DataFrame, chat_name: str, save_path: Path):
+
+def plot_location_over_time(df: pl.DataFrame, save_path: Path, save_name: str):
     """
     Creates and saves a line plot of location over time for a given chat name.
     """
     if df.is_empty():
-        logging.warning(f"No data to plot for {chat_name}. Skipping.")
+        logging.warning(f"No data to plot for {save_name}. Skipping.")
         return
 
-    pandas_df = df.to_pandas()
+    pandas_df = df.to_pandas().sort_values(by="datetime", axis=0)
+
+    pandas_df["location_count"] = pandas_df.groupby("location")["location"].transform(
+        "count"
+    )
 
     plt.style.use("seaborn-v0_8-whitegrid")
     fig, ax = plt.subplots(figsize=(15, 7))
 
-    sns.scatterplot(data=pandas_df, x="datetime", y="location", marker="o", ax=ax)
+    sns.scatterplot(
+        data=pandas_df,
+        x="datetime",
+        y="location",
+        hue="location_count",
+        palette="Oranges_d",
+        marker="o",
+        ax=ax,
+    )
 
-    ax.set_title(f"Location Trajectory for: {chat_name}", fontsize=16, weight="bold")
+    ax.set_title(f"Location Trajectory for: {save_name}", fontsize=16, weight="bold")
     ax.set_xlabel("Datetime", fontsize=12)
     ax.set_ylabel("Location", fontsize=12)
 
     plt.xticks(rotation=45, ha="right")
     plt.tight_layout()
 
-    safe_filename = "".join(c for c in chat_name if c.isalnum() or c in (' ', '_')).rstrip()
-    plot_filename = save_path / f"{safe_filename}_trajectory.png"
-    
+    if save_name != "all":
+        safe_filename = "".join(
+            c for c in save_name if c.isalnum() or c in (" ", "_")
+        ).rstrip()
+        plot_filename = save_path / f"{safe_filename}_trajectory.png"
+    else:
+        plot_filename = save_path / "all_trajectory.png"
+
     try:
         plt.savefig(plot_filename, dpi=300)
         logging.info(f"Successfully saved plot to {plot_filename}")
     except Exception as e:
-        logging.error(f"Failed to save plot for {chat_name}: {e}")
+        logging.error(f"Failed to save plot for {save_name}: {e}")
     finally:
         plt.close(fig)
+
 
 def plot_location_heatmap(df: pl.DataFrame, save_path: Path, save_name: str):
     """
@@ -100,18 +119,12 @@ def plot_location_heatmap(df: pl.DataFrame, save_path: Path, save_name: str):
     mean_lon = locations_df.get_column("longitude").mean()
 
     m = folium.Map(
-        location=[mean_lat, mean_lon], 
-        zoom_start=4, 
-        tiles="CartoDB positron"
+        location=[mean_lat, mean_lon], zoom_start=4, tiles="CartoDB positron"
     )
 
     heat_data = locations_df.to_numpy().tolist()
 
-    HeatMap(
-        heat_data, 
-        radius=15, 
-        blur=12
-    ).add_to(m)
+    HeatMap(heat_data, radius=15, blur=12).add_to(m)
 
     heatmap_filename = save_path / f"{save_name}_georeferenced_heatmap.html"
     try:
@@ -119,6 +132,7 @@ def plot_location_heatmap(df: pl.DataFrame, save_path: Path, save_name: str):
         logging.info(f"Successfully saved interactive heatmap to {heatmap_filename}")
     except Exception as e:
         logging.error(f"Failed to save georeferenced heatmap: {e}")
+
 
 def main():
     top_10_df = load_data(TOP_10_DATA_PATH)
@@ -163,18 +177,19 @@ def main():
     final_df.write_csv(PROCESSED_OUTPUT_PATH)
 
     logging.info("Starting plot generation...")
-    
-    plot_location_heatmap(final_df, TIMESTAMP_PLOTS_PATH, 'all')
+
+    plot_location_over_time(final_df, TIMESTAMP_PLOTS_PATH, "all")
+    plot_location_heatmap(final_df, TIMESTAMP_PLOTS_PATH, "all")
 
     unique_chat_names = final_df.get_column("data_chat_name").unique().to_list()
 
     for name in unique_chat_names:
         logging.info(f"Generating plot for '{name}'...")
         person_specific_df = final_df.filter(pl.col("data_chat_name") == name)
-        
-        plot_location_over_time(person_specific_df, name, TIMESTAMP_PLOTS_PATH)
+
+        plot_location_over_time(person_specific_df, TIMESTAMP_PLOTS_PATH, name)
         plot_location_heatmap(person_specific_df, TIMESTAMP_PLOTS_PATH, name)
-        
+
     logging.info("Script finished successfully.")
 
 
