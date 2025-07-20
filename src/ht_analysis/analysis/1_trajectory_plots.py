@@ -66,7 +66,7 @@ def generate_datetime_aggregations(df: pl.DataFrame) -> Optional[pl.DataFrame]:
     )
 
 
-def plot_location_over_time(df: pl.DataFrame, save_path: Path, save_name: str):
+def plot_location_over_time(df: pl.DataFrame, save_path: Path, save_name: str, plotting_agg:str='datetime'):
     """
     Creates and saves a line plot of location over time for a given chat name.
     """
@@ -74,7 +74,7 @@ def plot_location_over_time(df: pl.DataFrame, save_path: Path, save_name: str):
         logging.warning(f"No data to plot for {save_name}. Skipping.")
         return
 
-    pandas_df = df.to_pandas().sort_values(by="datetime", axis=0)
+    pandas_df = df.to_pandas().sort_values(by=plotting_agg, axis=0)
 
     pandas_df["location_count"] = pandas_df.groupby("location")["location"].transform(
         "count"
@@ -85,7 +85,7 @@ def plot_location_over_time(df: pl.DataFrame, save_path: Path, save_name: str):
 
     sns.scatterplot(
         data=pandas_df,
-        x="datetime",
+        x=plotting_agg,
         y="location",
         hue="location_count",
         palette="Oranges_d",
@@ -94,8 +94,15 @@ def plot_location_over_time(df: pl.DataFrame, save_path: Path, save_name: str):
     )
 
     ax.set_title(f"Location Trajectory for: {save_name}", fontsize=16, weight="bold")
-    ax.set_xlabel("Datetime", fontsize=12)
+    # change label depending on chosen aggregation
+    ax.set_xlabel(plotting_agg.replace("_", " "), fontsize=12)
     ax.set_ylabel("Location", fontsize=12)
+
+    # change the number of bins so that we use as many as there are different values
+    # in the aggrgation
+    unique_ticks = pandas_df[plotting_agg].unique()
+    if len(unique_ticks) <= 25:
+        ax.set_xticks(unique_ticks)
 
     plt.xticks(rotation=45, ha="right")
     plt.tight_layout()
