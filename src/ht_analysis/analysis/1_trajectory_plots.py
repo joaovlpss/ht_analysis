@@ -54,6 +54,16 @@ def generate_datetime_aggregations(df: pl.DataFrame) -> Optional[pl.DataFrame]:
         df -- A dataframe with a 'datetime' column containing pl.Datetime objects
             formatted as YYYY-MM-DD HH:mm:ss
     """
+    if "datetime" not in df.columns or df["datetime"].dtype != pl.Datetime:
+        logging.error("DataFrame must contain a 'datetime' column of type pl.Datetime.")
+        raise ValueError("Input DataFrame is missing or has incorrect 'datetime' column type.")
+
+    logging.info("Generating day, month, and year aggregations...")
+    return df.with_columns(
+        year=pl.col("datetime").dt.year(),
+        month=pl.col("datetime").dt.strftime("%Y-%m"),
+        day=pl.col("datetime").dt.truncate("1d"),
+    )
 
 
 def plot_location_over_time(df: pl.DataFrame, save_path: Path, save_name: str):
