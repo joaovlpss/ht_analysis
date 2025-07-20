@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import folium
 import matplotlib.pyplot as plt
@@ -44,6 +44,16 @@ def load_data(data_path: Path, **kwargs: Any) -> pl.DataFrame:
     except Exception as e:
         logging.error(f"An unexpected error occurred while loading {data_path}: {e}")
         raise
+
+def generate_datetime_aggregations(df: pl.DataFrame) -> Optional[pl.DataFrame]:
+    """
+    Creates day, month and year aggregations from a dataframe, and outputs
+    the same dataframe with these aggregations as new columns.
+
+    Args:
+        df -- A dataframe with a 'datetime' column containing pl.Datetime objects
+            formatted as YYYY-MM-DD HH:mm:ss
+    """
 
 
 def plot_location_over_time(df: pl.DataFrame, save_path: Path, save_name: str):
@@ -150,13 +160,18 @@ def main():
         combined_df.with_columns(_trajectory_split=pl.col("trajectory").str.split("_"))
         .with_columns(
             location=pl.col("_trajectory_split").list.get(0),
-            datetime=pl.col("_trajectory_split").list.get(1),
+            datetime_str=pl.col("_trajectory_split").list.get(1),
+        )
+        .with_columns(
+            datetime=pl.col("datetime_str").str.to_datetime("%Y-%m-%d %H:%M:%S")
         )
         .drop(
             "trajectory",
             "_trajectory_split",
+            "datetime_str"
         )
     )
+
     logging.info("Successfully split 'trajectory' into 'location' and 'datetime'.")
 
     final_df = processed_df.select(
