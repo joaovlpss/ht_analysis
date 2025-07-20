@@ -204,13 +204,14 @@ def main():
         "body",
     )
 
+    final_df = generate_datetime_aggregations(final_df)
     ARTIFACTS_PATH.mkdir(parents=True, exist_ok=True)
     logging.info(f"Saving processed data to {PROCESSED_OUTPUT_PATH}...")
     final_df.write_csv(PROCESSED_OUTPUT_PATH)
 
     logging.info("Starting plot generation...")
 
-    plot_location_over_time(final_df, TIMESTAMP_PLOTS_PATH, "all")
+    plot_location_over_time(final_df, TIMESTAMP_PLOTS_PATH, "all", "month")
     plot_location_heatmap(final_df, TIMESTAMP_PLOTS_PATH, "all")
 
     unique_chat_names = final_df.get_column("data_chat_name").unique().to_list()
@@ -219,7 +220,7 @@ def main():
         logging.info(f"Generating plot for '{name}'...")
         person_specific_df = final_df.filter(pl.col("data_chat_name") == name)
 
-        plot_location_over_time(person_specific_df, TIMESTAMP_PLOTS_PATH, name)
+        plot_location_over_time(person_specific_df, TIMESTAMP_PLOTS_PATH, name, "day")
         plot_location_heatmap(person_specific_df, TIMESTAMP_PLOTS_PATH, name)
 
     logging.info("Script finished successfully.")
