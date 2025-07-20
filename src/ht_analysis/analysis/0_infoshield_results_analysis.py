@@ -21,15 +21,15 @@ OUTPUT_PATH = PROJECT_ROOT / "artifacts" / "graphs" / "infoshield_results"
 
 # Statically define the color map for node types
 STATIC_COLOR_MAP = {
-    "ad_id": "#FF0000",              # Red
-    "person_id": "#0000FF",           # Blue
-    "phone": "#00C000",              # Bright Green
-    "email": "#FFA500",              # Bright Orange
-    "url": "#000000",              # Black
-    "main_image_url": "#00CED1",      # Dark Turquoise / Cyan
-    "LSH label": "#FF00FF",           # Magenta / Fuchsia
-    "trajectory": "#A52A2A",         # Brown
-    "person": "#0000FF",              # Blue (aliased with person_id)
+    "ad_id": "#FF0000",  # Red
+    "person_id": "#0000FF",  # Blue
+    "phone": "#00C000",  # Bright Green
+    "email": "#FFA500",  # Bright Orange
+    "url": "#000000",  # Black
+    "main_image_url": "#00CED1",  # Dark Turquoise / Cyan
+    "LSH label": "#FF00FF",  # Magenta / Fuchsia
+    "trajectory": "#A52A2A",  # Brown
+    "person": "#0000FF",  # Blue (aliased with person_id)
 }
 
 
@@ -85,10 +85,12 @@ def plot_and_save_graph(graph: nx.Graph, file_path: Path, title: str):
         edge_y.extend([y0, y1, None])
 
     edge_trace = go.Scatter(
-        x=edge_x, y=edge_y,
-        line=dict(width=0.5, color='#888'),
-        hoverinfo='none',
-        mode='lines')
+        x=edge_x,
+        y=edge_y,
+        line=dict(width=0.5, color="#888"),
+        hoverinfo="none",
+        mode="lines",
+    )
 
     # Node trace
     node_x, node_y, node_text, node_color = [], [], [], []
@@ -96,31 +98,31 @@ def plot_and_save_graph(graph: nx.Graph, file_path: Path, title: str):
         x, y = pos[node]
         node_x.append(x)
         node_y.append(y)
-        node_type = graph.nodes[node].get('type', 'unknown')
+        node_type = graph.nodes[node].get("type", "unknown")
         node_text.append(f"{node}<br>Type: {node_type}")
-        node_color.append(STATIC_COLOR_MAP.get(node_type, "#808080")) # Default to grey
+        node_color.append(STATIC_COLOR_MAP.get(node_type, "#808080"))  # Default to grey
 
     node_trace = go.Scatter(
-        x=node_x, y=node_y,
-        mode='markers',
-        hoverinfo='text',
+        x=node_x,
+        y=node_y,
+        mode="markers",
+        hoverinfo="text",
         text=node_text,
-        marker=dict(
-            showscale=False,
-            color=node_color,
-            size=10,
-            line_width=2))
+        marker=dict(showscale=False, color=node_color, size=10, line_width=2),
+    )
 
     # Create figure
-    fig = go.Figure(data=[edge_trace, node_trace],
-                 layout=go.Layout(
-                    title=title,
-                    showlegend=False,
-                    hovermode='closest',
-                    margin=dict(b=20,l=5,r=5,t=40),
-                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False))
-                    )
+    fig = go.Figure(
+        data=[edge_trace, node_trace],
+        layout=go.Layout(
+            title=title,
+            showlegend=False,
+            hovermode="closest",
+            margin=dict(b=20, l=5, r=5, t=40),
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        ),
+    )
 
     logging.info(f"Saving graph to {file_path}")
     fig.write_html(file_path)
@@ -133,21 +135,18 @@ def main():
     logging.info("Successfully loaded dataset and LSH labels! Performing join...")
 
     logging.info("Preparing data for graph construction...")
-    graph_df = (
-        dataset.with_columns(
-            pl.concat_str(["location_detail", "post_date"], separator="_").alias(
-                "trajectory"
-            )
+    graph_df = dataset.with_columns(
+        pl.concat_str(["location_detail", "post_date"], separator="_").alias(
+            "trajectory"
         )
-        .select(
-            pl.col("ad_id"),
-            pl.col("data_chat_name").alias("person_id"),
-            pl.col("phone"),
-            pl.col("email"),
-            pl.col("url"),
-            pl.col("main_image_url"),
-            pl.col("trajectory"),
-        )
+    ).select(
+        pl.col("ad_id"),
+        pl.col("data_chat_name").alias("person_id"),
+        pl.col("phone"),
+        pl.col("email"),
+        pl.col("url"),
+        pl.col("main_image_url"),
+        pl.col("trajectory"),
     )
 
     logging.info("Mounting graph from the dataset...")
@@ -167,7 +166,9 @@ def main():
                 graph.add_node(node_id, type=col_name)
                 graph.add_edge(person_id, node_id)
 
-    logging.info(f"Graph mounted successfully with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges.")
+    logging.info(
+        f"Graph mounted successfully with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges."
+    )
 
     logging.info("Calculating the main core of the graph...")
     main_core = nx.k_core(graph)
@@ -181,9 +182,7 @@ def main():
     ]
 
     top_persons = sorted(
-        person_nodes,
-        key=lambda n: core_degrees.get(n, 0),
-        reverse=True
+        person_nodes, key=lambda n: core_degrees.get(n, 0), reverse=True
     )[:10]
 
     logging.info(f"Top 10 persons identified: {top_persons}")
@@ -193,7 +192,9 @@ def main():
         person_output_path = OUTPUT_PATH / str(person_node)
 
         for radius in [1, 2]:
-            logging.info(f"Generating egonet for '{person_node}' with radius {radius}...")
+            logging.info(
+                f"Generating egonet for '{person_node}' with radius {radius}..."
+            )
             ego_graph = nx.ego_graph(graph, person_node, radius=radius)
 
             file_name = f"egonet_radius_{radius}.html"
@@ -214,17 +215,19 @@ def main():
 
     # Filter the dataset for rows where 'data_chat_name' is in the top_persons list
     # and select the specified columns.
-    top_10_table = dataset_with_trajectory.filter(
-        pl.col("data_chat_name").is_in(top_persons)
-    ).select(
-        "data_chat_name",
-        "ad_id",
-        "phone",
-        "email",
-        "url",
-        "trajectory",
-        "body",
-    ).sort(by="data_chat_name")
+    top_10_table = (
+        dataset_with_trajectory.filter(pl.col("data_chat_name").is_in(top_persons))
+        .select(
+            "data_chat_name",
+            "ad_id",
+            "phone",
+            "email",
+            "url",
+            "trajectory",
+            "body",
+        )
+        .sort(by="data_chat_name")
+    )
 
     output_csv_path = OUTPUT_PATH / "top_10_persons_data.csv"
     logging.info(f"Saving top 10 persons data to {output_csv_path}")
